@@ -1,0 +1,19 @@
+{
+  "required_api_version": "^2.0.0",
+  "name": "Claude Sessions",
+  "description": "Browse and resume Claude Code sessions",
+  "developer_name": "rata",
+  "icon": "images/icon.png",
+  "options": {
+    "query_debounce": 0.1
+  },
+  "preferences": [
+    {
+      "id": "cc_kw",
+      "type": "keyword",
+      "name": "Claude Sessions keyword",
+      "description": "Keyword to search/view Claude Code sessions",
+      "default_value": "cc"
+    }
+  ]
+}
