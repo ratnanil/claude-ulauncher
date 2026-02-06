@@ -69,6 +69,7 @@ def search_sessions(sessions, query):
         s for s in sessions
         if query in s.get("topic", "").lower()
         or query in s.get("folder", "").lower()
+        or query in s.get("session_id", "").lower()
     ]
 
 
@@ -113,7 +114,7 @@ class QueryHandler(EventListener):
             items.append(ExtensionResultItem(
                 icon="images/icon.png",
                 name=f"{s['topic']}",
-                description=f"{folder} \u00b7 {s['date']} \u00b7 {s['messages']} msgs",
+                description=f"{sid} \u00b7 {folder} \u00b7 {s['date']} \u00b7 {s['messages']} msgs",
                 on_enter=RunScriptAction(
                     f'gnome-terminal -- bash -c "cd ~/**/\'{folder}\' 2>/dev/null; claude --resume {sid}"',
                     [],
