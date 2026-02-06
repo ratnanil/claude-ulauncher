@@ -1,3 +1,4 @@
+import html
 import json
 import os
 import subprocess
@@ -14,6 +15,7 @@ from ulauncher.api.shared.action.RunScriptAction import RunScriptAction
 HISTORY_FILE = os.path.expanduser("~/.claude/history.jsonl")
 PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 JQ_FILTER = os.path.join(os.path.dirname(__file__), "sessions.jq")
+TMPDIR = tempfile.gettempdir()
 
 
 def session_file_exists(session):
@@ -76,6 +78,86 @@ def generate_html_table(sessions):
     return path
 
 
+def session_file_path(session):
+    """Return the path to a session's jsonl file."""
+    project = session.get("project", "")
+    sid = session.get("session_id", "")
+    dashed = "-" + project.strip("/").replace("/", "-")
+    return os.path.join(PROJECTS_DIR, dashed, f"{sid}.jsonl")
+
+
+def extract_text(content):
+    """Extract readable text from a message content field."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+                elif block.get("type") == "tool_use":
+                    name = block.get("name", "tool")
+                    parts.append(f"[Tool: {name}]")
+                elif block.get("type") == "tool_result":
+                    inner = block.get("content", "")
+                    if isinstance(inner, str) and inner:
+                        parts.append(f"[Result: {inner[:200]}]")
+        return "\n".join(parts)
+    return ""
+
+
+def generate_transcript_html(session):
+    """Render a session transcript as a readable HTML page."""
+    path = session_file_path(session)
+    messages = []
+    with open(path) as f:
+        for line in f:
+            try:
+                messages.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+    body = ""
+    for msg in messages:
+        role = msg.get("type")
+        if role not in ("user", "assistant"):
+            continue
+        content = msg.get("message", {})
+        if isinstance(content, dict):
+            content = content.get("content", "")
+        text = extract_text(content).strip()
+        if not text:
+            continue
+        escaped = html.escape(text)
+        cls = "user" if role == "user" else "assistant"
+        label = "You" if role == "user" else "Claude"
+        body += f'<div class="msg {cls}"><span class="label">{label}</span><pre>{escaped}</pre></div>\n'
+
+    sid = session.get("session_id", "")[:8]
+    topic = html.escape(session.get("topic", ""))
+    page = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Session {sid}</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; margin: 2rem; max-width: 900px; margin: 2rem auto; }}
+  .msg {{ margin: 1rem 0; padding: 1rem; border-radius: 8px; }}
+  .msg pre {{ white-space: pre-wrap; word-wrap: break-word; margin: 0.5rem 0 0 0; font-size: 0.9rem; }}
+  .label {{ font-weight: bold; font-size: 0.85rem; text-transform: uppercase; }}
+  .user {{ background: #e8f0fe; }}
+  .assistant {{ background: #f0f0f0; }}
+  h2 {{ border-bottom: 1px solid #ddd; padding-bottom: 0.5rem; }}
+</style></head>
+<body>
+<h2>{topic} <small style="color:#888">({sid})</small></h2>
+{body}
+</body></html>"""
+
+    out = os.path.join(TMPDIR, f"claude-transcript-{sid}.html")
+    with open(out, "w") as f:
+        f.write(page)
+    return out
+
+
 def search_sessions(sessions, query):
     """Filter sessions by topic or folder."""
     query = query.lower()
@@ -124,18 +206,25 @@ class QueryHandler(EventListener):
             ])
 
         items = []
-        for s in matches[:8]:
+        for s in matches[:4]:
             sid = s["session_id"]
             folder = s["folder"]
             project = s.get("project", "~")
+            transcript_path = generate_transcript_html(s)
             items.append(ExtensionResultItem(
                 icon="images/icon.png",
                 name=f"{s['topic']}",
-                description=f"{sid[:8]} \u00b7 {folder} \u00b7 {s['date']} \u00b7 {s['messages']} msgs",
+                description=f"{sid[:8]} \u00b7 {folder} \u00b7 {s['date']} \u00b7 {s['messages']} msgs \u00b7 Enter to resume",
                 on_enter=RunScriptAction(
                     f'gnome-terminal -- zsh -ic "cd \'{project}\'; claude --resume {sid}; exec zsh"',
                     [],
                 ),
+            ))
+            items.append(ExtensionResultItem(
+                icon="images/icon.png",
+                name=f"\u2514 View transcript",
+                description=f"{sid[:8]} \u00b7 Open conversation in browser",
+                on_enter=OpenUrlAction(f"file://{transcript_path}"),
             ))
 
         return RenderResultListAction(items)
