@@ -12,7 +12,7 @@ from ulauncher.api.shared.action.OpenUrlAction import OpenUrlAction
 from ulauncher.api.shared.action.RunScriptAction import RunScriptAction
 
 HISTORY_FILE = os.path.expanduser("~/.claude/history.jsonl")
-JQ_FILTER = os.path.expanduser("/tmp/sessions.jq")
+JQ_FILTER = os.path.join(os.path.dirname(__file__), "sessions.jq")
 
 
 def load_sessions():
