@@ -18,12 +18,16 @@ JQ_FILTER = os.path.join(os.path.dirname(__file__), "sessions.jq")
 TMPDIR = tempfile.gettempdir()
 
 
+def project_slug(project):
+    """Convert a project path to the directory name Claude Code uses."""
+    return "-" + project.strip("/").replace("/", "-").replace("_", "-")
+
+
 def session_file_exists(session):
     """Check if the session file still exists on disk."""
     project = session.get("project", "")
     sid = session.get("session_id", "")
-    dashed = "-" + project.strip("/").replace("/", "-")
-    return os.path.exists(os.path.join(PROJECTS_DIR, dashed, f"{sid}.jsonl"))
+    return os.path.exists(os.path.join(PROJECTS_DIR, project_slug(project), f"{sid}.jsonl"))
 
 
 def load_all_sessions():
@@ -82,8 +86,7 @@ def session_file_path(session):
     """Return the path to a session's jsonl file."""
     project = session.get("project", "")
     sid = session.get("session_id", "")
-    dashed = "-" + project.strip("/").replace("/", "-")
-    return os.path.join(PROJECTS_DIR, dashed, f"{sid}.jsonl")
+    return os.path.join(PROJECTS_DIR, project_slug(project), f"{sid}.jsonl")
 
 
 def extract_text(content):
