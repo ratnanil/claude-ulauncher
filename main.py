@@ -1,6 +1,7 @@
 import html
 import json
 import os
+import re
 import subprocess
 import tempfile
 
@@ -19,8 +20,12 @@ TMPDIR = tempfile.gettempdir()
 
 
 def project_slug(project):
-    """Convert a project path to the directory name Claude Code uses."""
-    return "-" + project.strip("/").replace("/", "-").replace("_", "-")
+    """Convert a project path to the directory name Claude Code uses.
+
+    Claude Code replaces any non-alphanumeric character (slashes, underscores,
+    dots, spaces, …) with a hyphen when deriving the project directory name.
+    """
+    return "-" + re.sub(r"[^a-zA-Z0-9-]", "-", project.strip("/"))
 
 
 def session_file_exists(session):
