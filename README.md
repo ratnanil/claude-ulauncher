@@ -45,6 +45,13 @@ Up to 4 session matches are shown (8 list items total).
 
 A session is considered resumable if its backing `.jsonl` file still exists under `~/.claude/projects/`. Sessions whose files have been deleted show in the overview table but are excluded from search results.
 
+### Session topics
+
+The topic shown for each session comes from one of two sources, in order of preference:
+
+1. **AI-generated summary** from `sessions-index.json` — Claude Code writes this file per project and includes a short descriptive title (e.g. "ZHAW drive mounting with GNOME Keyring"). Coverage grows automatically as you use Claude Code.
+2. **First prompt** from `~/.claude/history.jsonl` — used as a fallback when no summary is available yet.
+
 ## File overview
 
 ```
@@ -61,9 +68,13 @@ images/        — Extension icon
 
 2. **Resumability check**: For each session, `main.py` checks whether `~/.claude/projects/<project-slug>/<session_id>.jsonl` exists on disk. Only sessions with an existing file are offered for resumption.
 
-3. **Transcript rendering**: When viewing a transcript, `main.py` reads the session's `.jsonl` file line by line, extracts `user` and `assistant` messages (handling plain strings, text blocks, tool calls, and tool results), and writes a self-contained HTML file to `/tmp/`.
+   The project slug is derived from the project path by replacing any non-alphanumeric character (slashes, underscores, dots, spaces, …) with a hyphen and prepending one. For example `/home/rata/.local/share/my_project` → `-home-rata--local-share-my-project`. This matches exactly how Claude Code itself names these directories.
 
-4. **Session resumption**: Runs:
+3. **Topic resolution**: After loading sessions from history, `main.py` reads all `sessions-index.json` files under `~/.claude/projects/` and builds a `session_id → summary` map. Sessions that appear in this index get the AI-generated summary as their topic; the rest keep the first prompt from `history.jsonl`.
+
+4. **Transcript rendering**: When viewing a transcript, `main.py` reads the session's `.jsonl` file line by line, extracts `user` and `assistant` messages (handling plain strings, text blocks, tool calls, and tool results), and writes a self-contained HTML file to `/tmp/`.
+
+5. **Session resumption**: Runs:
    ```
    gnome-terminal -- zsh -ic "cd '<project>'; claude --resume <session_id>; exec zsh"
    ```
@@ -74,6 +85,7 @@ images/        — Extension icon
 |------|---------|
 | `~/.claude/history.jsonl` | Master list of all Claude Code activity (source of session metadata) |
 | `~/.claude/projects/` | Per-project session files; used to check resumability and read transcripts |
+| `~/.claude/projects/*/sessions-index.json` | AI-generated session summaries written by Claude Code; used as topic when available |
 
 ## Customisation
 
