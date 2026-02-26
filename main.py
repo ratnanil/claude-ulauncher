@@ -35,6 +35,26 @@ def session_file_exists(session):
     return os.path.exists(os.path.join(PROJECTS_DIR, project_slug(project), f"{sid}.jsonl"))
 
 
+def load_summaries():
+    """Build a session_id → summary map from all sessions-index.json files."""
+    summaries = {}
+    try:
+        for proj_dir in os.listdir(PROJECTS_DIR):
+            idx_path = os.path.join(PROJECTS_DIR, proj_dir, "sessions-index.json")
+            if not os.path.isfile(idx_path):
+                continue
+            with open(idx_path) as f:
+                data = json.load(f)
+            for entry in data.get("entries", []):
+                sid = entry.get("sessionId")
+                summary = (entry.get("summary") or "").strip()
+                if sid and summary and not summary.startswith("API Error"):
+                    summaries[sid] = summary
+    except Exception:
+        pass
+    return summaries
+
+
 def load_all_sessions():
     """Load all sessions and tag each with a resumable flag."""
     try:
@@ -44,8 +64,12 @@ def load_all_sessions():
         )
         if result.returncode == 0:
             sessions = json.loads(result.stdout)
+            summaries = load_summaries()
             for s in sessions:
                 s["resumable"] = session_file_exists(s)
+                sid = s.get("session_id", "")
+                if sid in summaries:
+                    s["topic"] = summaries[sid]
             return sessions
     except Exception:
         pass
