@@ -3,7 +3,11 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
+
+sys.path.insert(0, os.path.dirname(__file__))
+from usage_tracker import ClaudeUsageTracker
 
 from ulauncher.api.client.Extension import Extension
 from ulauncher.api.client.EventListener import EventListener
@@ -201,6 +205,101 @@ def search_sessions(sessions, query):
     ]
 
 
+def calculate_cost(stats, pricing):
+    """Calculate API cost from token counts and pricing info."""
+    return (
+        stats['input_tokens']          * pricing['input']          / 1_000_000 +
+        stats['output_tokens']         * pricing['output']         / 1_000_000 +
+        stats['cache_creation_tokens'] * pricing['cache_creation'] / 1_000_000 +
+        stats['cache_read_tokens']     * pricing['cache_read']     / 1_000_000
+    )
+
+
+def generate_usage_html():
+    """Generate an HTML usage report and return the file path."""
+    tracker = ClaudeUsageTracker()
+    usage_data = tracker.collect_all_usage()
+    periods = tracker.analyze_usage_periods(usage_data)
+
+    def model_rows(period_key):
+        data = periods.get(period_key)
+        if not data:
+            return "<tr><td colspan='6'>No data</td></tr>"
+        rows = ""
+        total_cost = 0
+        for model, stats in sorted(data['by_model'].items()):
+            info = tracker.get_model_info(model)
+            cost = calculate_cost(stats, info)
+            total_cost += cost
+            rows += (
+                f"<tr><td>{info['name']}</td>"
+                f"<td>{stats['requests']:,}</td>"
+                f"<td>{stats['input_tokens']:,}</td>"
+                f"<td>{stats['output_tokens']:,}</td>"
+                f"<td>{(stats['cache_creation_tokens'] + stats['cache_read_tokens']):,}</td>"
+                f"<td>${cost:.2f}</td></tr>"
+            )
+        rows += f"<tr class='total'><td><strong>Total</strong></td><td></td><td></td><td></td><td></td><td><strong>${total_cost:.2f}</strong></td></tr>"
+        return rows
+
+    def daily_rows(period_key):
+        data = periods.get(period_key)
+        if not data:
+            return "<tr><td colspan='4'>No data</td></tr>"
+        rows = ""
+        for date, stats in sorted(data['by_day'].items(), reverse=True):
+            total_tokens = stats['input_tokens'] + stats['output_tokens'] + stats['cache_creation_tokens']
+            rows += (
+                f"<tr><td>{date}</td>"
+                f"<td>{total_tokens:,}</td>"
+                f"<td>{stats['cache_read_tokens']:,}</td>"
+                f"<td>{stats['requests']:,}</td></tr>"
+            )
+        return rows
+
+    page = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Claude Usage Report</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; margin: 2rem; max-width: 960px; }}
+  h2 {{ border-bottom: 2px solid #4A90D9; padding-bottom: 0.5rem; color: #333; }}
+  h3 {{ color: #555; margin-top: 2rem; }}
+  table {{ border-collapse: collapse; width: 100%; margin-bottom: 2rem; }}
+  th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+  th {{ background: #4A90D9; color: white; position: sticky; top: 0; }}
+  tr:nth-child(even) {{ background: #f9f9f9; }}
+  tr:hover {{ background: #e9e9e9; }}
+  tr.total {{ background: #eef4fb; font-weight: bold; }}
+  .note {{ color: #888; font-size: 0.85rem; margin-bottom: 2rem; }}
+</style></head>
+<body>
+<h2>Claude Code Usage Report</h2>
+<p class="note">Costs are calculated from token counts using current API pricing. Actual charges on Pro are $0.</p>
+
+<h3>Last 30 Days — By Model</h3>
+<table>
+<tr><th>Model</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Cache tokens</th><th>Est. API cost</th></tr>
+{model_rows('30_days')}
+</table>
+
+<h3>Last 7 Days — By Model</h3>
+<table>
+<tr><th>Model</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Cache tokens</th><th>Est. API cost</th></tr>
+{model_rows('7_days')}
+</table>
+
+<h3>Last 30 Days — Daily Breakdown</h3>
+<table>
+<tr><th>Date</th><th>Tokens (excl. cache read)</th><th>Cache read tokens</th><th>Requests</th></tr>
+{daily_rows('30_days')}
+</table>
+</body></html>"""
+
+    path = os.path.join(tempfile.gettempdir(), "claude-usage.html")
+    with open(path, "w") as f:
+        f.write(page)
+    return path
+
+
 class ClaudeSessionsExtension(Extension):
     def __init__(self):
         super().__init__()
@@ -221,6 +320,17 @@ class QueryHandler(EventListener):
                     name=f"View all sessions ({len(all_sessions)}, {resumable} resumable)",
                     description="Open HTML table in browser",
                     on_enter=OpenUrlAction(f"file://{html_path}"),
+                ),
+            ])
+
+        if arg.strip().lower() == "--stats":
+            usage_path = generate_usage_html()
+            return RenderResultListAction([
+                ExtensionResultItem(
+                    icon="images/icon.png",
+                    name="Claude API usage report",
+                    description="Open estimated API costs and token breakdown in browser",
+                    on_enter=OpenUrlAction(f"file://{usage_path}"),
                 ),
             ])
 

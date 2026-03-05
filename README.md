@@ -8,6 +8,7 @@ A [Ulauncher](https://ulauncher.io/) extension to browse, search, and resume [Cl
 - Search resumable sessions by topic, folder, or session ID
 - Resume a session in a new terminal with one keypress
 - View a rendered HTML transcript of any conversation
+- View an estimated API usage and cost report by model and day
 
 ## Requirements
 
@@ -33,6 +34,7 @@ Then restart Ulauncher and enable the extension in preferences.
 | Input | Action |
 |-------|--------|
 | `cc` (no query) | Opens an HTML table of all sessions in your browser |
+| `cc --stats` | Opens an estimated API cost report by model and day in your browser |
 | `cc <query>` | Filters resumable sessions by topic, folder, or session ID |
 
 When searching, each match shows two entries:
@@ -55,11 +57,12 @@ The topic shown for each session comes from one of two sources, in order of pref
 ## File overview
 
 ```
-main.py        — Extension entry point; all logic lives here
-sessions.jq    — jq filter that parses ~/.claude/history.jsonl into session metadata
-manifest.json  — Ulauncher extension manifest (keyword, API version)
-versions.json  — Ulauncher version compatibility declaration
-images/        — Extension icon
+main.py            — Extension entry point; all logic lives here
+usage_tracker.py   — Claude API usage tracker; reads conversation logs and calculates token costs
+sessions.jq        — jq filter that parses ~/.claude/history.jsonl into session metadata
+manifest.json      — Ulauncher extension manifest (keyword, API version)
+versions.json      — Ulauncher version compatibility declaration
+images/            — Extension icon
 ```
 
 ## How it works
@@ -74,7 +77,9 @@ images/        — Extension icon
 
 4. **Transcript rendering**: When viewing a transcript, `main.py` reads the session's `.jsonl` file line by line, extracts `user` and `assistant` messages (handling plain strings, text blocks, tool calls, and tool results), and writes a self-contained HTML file to `/tmp/`.
 
-5. **Session resumption**: Runs:
+5. **Usage report**: When `cc stats` is entered, `usage_tracker.py` reads all conversation `.jsonl` files, extracts token counts per model, applies current API pricing, and renders an HTML report to `/tmp/claude-usage.html`. Costs are estimated — actual charges on Claude Pro are $0, but the report shows what the same usage would cost on pay-per-token API billing.
+
+6. **Session resumption**: Runs:
    ```
    gnome-terminal -- zsh -ic "cd '<project>'; claude --resume <session_id>; exec zsh"
    ```
